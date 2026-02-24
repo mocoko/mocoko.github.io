@@ -1,0 +1,17 @@
+{
+  "hash": "12a1d323df62440f04b7a28bd4ffb66c",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Analysis B-E\"\nformat: dashboard\nexecute:\n  echo: false\n  warning: false\n  message: false\ntheme: cosmo\n---\n\n::: {.cell}\n\n:::\n\n\n::: sidebar\n## Analyses {width=30%}\n- <a href=\"#\" onclick=\"showPanel('panel-bmi-sex'); return false;\">BMI by Sex</a>\n- <a href=\"#\" onclick=\"showPanel('panel-bmi-edu'); return false;\">BMI by Education</a>\n- <a href=\"#\" onclick=\"showPanel('panel-hbp-sex'); return false;\">High BP by Sex</a>\n- <a href=\"#\" onclick=\"showPanel('panel-edu-race'); return false;\">Education by Race/Ethnicity</a>\n:::\n\n::: {.analysis-panel #panel-bmi-sex style=\"display:none;\"}\n\n## Analysis B {#s1-bmi-sex}\n\n::: {.cell}\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-2-1.png){width=768}\n:::\n:::\n\n:::\n\n::: {.analysis-panel #panel-bmi-edu style=\"display:none;\"}\n\n## Analysis C {#s1-bmi-edu}\n\n::: {.cell}\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-3-1.png){width=768}\n:::\n:::\n\n:::\n\n::: {.analysis-panel #panel-hbp-sex style=\"display:none;\"}\n\n## Analysis D {#s1-hbp-sex}\n\n::: {.cell}\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-4-1.png){width=768}\n:::\n:::\n\n:::\n\n::: {.analysis-panel #panel-edu-race style=\"display:none;\"}\n\n## Analysis E {#s1-edu-race}\n\n::: {.cell}\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-5-1.png){width=768}\n:::\n:::\n\n:::\n\n<script>\nfunction showPanel(id) {\n  // hide all analysis panels\n  document.querySelectorAll('.analysis-panel').forEach(function(el) {\n    el.style.display = 'none';\n  });\n  // show the one that was clicked\n  var panel = document.getElementById(id);\n  if (panel) {\n    panel.style.display = 'block';\n  }\n}\n</script>\n\n<style>\n.analysis-panel {\n  max-height: calc(100vh - 80px); /* never taller than screen */\n  overflow: auto;                 /* allow scrolling inside panel if needed */\n  padding-right: 10px;\n}\n\n.analysis-panel img  {\n  max-width: 100%;   /* fit horizontally */\n  height: auto;      /* scale proportional */\n}\n</style>\n",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

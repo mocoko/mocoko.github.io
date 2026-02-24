@@ -1,0 +1,13 @@
+---
+title: Projects
+---
+
+## Sustained Anti-Inflammatory Release from Nanostructured Coatings on Soft-Polymer Based Neural Probes for Addressing Neuroinflammation
+
+The project explores nanostructured coatings designed to provide sustained anti-inflammatory drug release from soft polymer–based neural probes. The coating system consists of titania nanotube arrays incorporated into a mechanically adaptive polyvinyl acetate-cellulose nanocrystal (PVAc-CNC) nanocomposite substrate. The titania nanotubes serve as drug reservoirs for localized dexamethasone delivery, while the underlying polymer softens after implantation to reduce mechanical mismatch with neural tissue. Together, these design features are intended to limit neuroinflammation at the brain–device interface. The biological response to these coatings is evaluated through in vivo implantation studies, transcriptomic analysis, and gene ontology enrichment to identify molecular pathways affected by the combined mechanical and pharmacological approach.
+
+```{=html}
+<div  style="margin: 30px; text-align: center;">
+<a class="btn btn-primary" href="https://www.marvinschmitt.com/blog/website-tutorial-quarto/" role="button" target="_blank" style="padding: 15px 30px;">View the tutorial for this template (+ download link)</a>
+</div>
+```

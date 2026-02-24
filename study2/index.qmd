@@ -1,0 +1,309 @@
+---
+title: "Study 2: Income-to-Poverty Ratio and Adult BMI in NHANES 2017-2020"
+author: "Mali Ocoko"
+format: dashboard
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+set.seed(4311)
+required <- c("tidyverse","janitor","nhanesA","mice","broom","patchwork","skimr")
+to_install <- setdiff(required, rownames(installed.packages()))
+if (length(to_install)) install.packages(to_install, repos = "https://cloud.r-project.org")
+suppressPackageStartupMessages({
+  library(tidyverse); library(janitor); library(nhanesA)
+  library(mice); library(broom); library(patchwork); library(skimr)
+})
+knitr::opts_chunk$set(comment = NA)
+theme_set(theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"), panel.grid.minor = element_blank()))
+
+demo  <- nhanes("P_DEMO") |> clean_names()
+bmx   <- nhanes("P_BMX")  |> clean_names()
+nh_all <- left_join(demo, bmx, by = "seqn") |>
+  mutate(across(c(riagendr, dmdeduc2, ridreth3, indfmpir, bmxbmi, ridageyr, ridstatr), as.numeric))
+
+nh <- nh_all |>
+  transmute(seqn, ridstatr, ridageyr,
+    sex = factor(riagendr, levels=c(1,2), labels=c("Male","Female")),
+    race_eth = factor(ridreth3),
+    education = case_when(
+      dmdeduc2 %in% c(1,2) ~ "Less than HS", dmdeduc2==3 ~ "HS Grad",
+      dmdeduc2==4 ~ "Some College",           dmdeduc2==5 ~ "College Grad",
+      TRUE ~ NA_character_),
+    income_ratio = if_else(indfmpir>5|indfmpir<0, NA_real_, indfmpir),
+    bmi = if_else(bmxbmi>80|bmxbmi<10, NA_real_, bmxbmi))
+
+study2_raw <- nh |> filter(!is.na(bmi), !is.na(income_ratio), ridageyr >= 20)
+
+to_impute <- study2_raw |> select(ridageyr, sex, race_eth, education) |>
+  mutate(across(where(is.character), as.factor))
+set.seed(4311)
+imp_data <- complete(mice(to_impute, m=1, maxit=10, printFlag=FALSE), 1)
+
+study2 <- bind_cols(study2_raw |> select(seqn, bmi, income_ratio), imp_data) |>
+  mutate(sex=factor(sex), race_eth=factor(race_eth),
+    education=factor(education, levels=c("Less than HS","HS Grad","Some College","College Grad")))
+
+set.seed(4311)
+training_sample <- study2 |> slice_sample(prop=0.75)
+test_sample     <- anti_join(study2, training_sample, by="seqn")
+
+sk <- function(x) mean(((x-mean(x,na.rm=TRUE))/sd(x,na.rm=TRUE))^3, na.rm=TRUE)
+use_log       <- sk(training_sample$bmi) > 1
+outcome_label <- if (use_log) "log(BMI)" else "BMI"
+training <- training_sample |> mutate(y = if (use_log) log(bmi) else bmi)
+test     <- test_sample     |> mutate(y = if (use_log) log(bmi) else bmi)
+
+mod_big   <- lm(y ~ income_ratio + ridageyr + sex + race_eth + education, data=training)
+mod_small <- lm(y ~ income_ratio, data=training)
+
+test_preds <- test |>
+  mutate(pred_big=predict(mod_big, newdata=test), pred_small=predict(mod_small, newdata=test))
+if (use_log) {
+  test_preds <- test_preds |>
+    mutate(pred_big_bt=exp(pred_big), pred_small_bt=exp(pred_small), y_bt=exp(y))
+} else {
+  test_preds <- test_preds |> mutate(pred_big_bt=pred_big, pred_small_bt=pred_small, y_bt=y)
+}
+
+rmspe <- function(o,p) sqrt(mean((o-p)^2,na.rm=TRUE))
+mape  <- function(o,p) mean(abs((o-p)/o),na.rm=TRUE)*100
+maxae <- function(o,p) max(abs(o-p),na.rm=TRUE)
+vr2   <- function(o,p) cor(o,p,use="complete.obs")^2
+
+miss_before <- colSums(is.na(study2_raw |> select(ridageyr, sex, race_eth, education)))
+miss_after  <- colSums(is.na(study2     |> select(ridageyr, sex, race_eth, education)))
+```
+
+# Overview
+
+## Row {height="35%"}
+
+```{r}
+#| title: "About This Dashboard"
+knitr::kable(tibble::tribble(
+  ~Item,            ~Detail,
+  "Data source",    "NHANES 2017-March 2020 (Pre-pandemic)",
+  "Tables used",    "P_DEMO, P_BMX",
+  "Analytic sample","7,214 adults (age >= 20)",
+  "Outcome",        "BMI (kg/m2), log-transformed",
+  "Key predictor",  "Income-to-Poverty Ratio (0-5)",
+  "Train/Test",     "75% / 25% split",
+  "Rendered",       format(Sys.Date(), "%Y-%m-%d")
+))
+```
+
+```{r}
+#| title: "Research Question & Hypothesis"
+knitr::kable(tibble::tribble(
+  ~Item,       ~Detail,
+  "Question",  "How well does family income-to-poverty ratio predict BMI, after accounting for age, sex, race/ethnicity, and education?",
+  "Hypothesis","Higher income expected to link to lower BMI, but this effect is expected to disappear after adjusting for demographic confounders.",
+  "Finding",   "After adjustment, income-to-poverty ratio shows no meaningful independent association with BMI. Big model preferred (validated R2 ~0.053 vs ~0.000)."
+))
+```
+
+## Row {height="65%"}
+
+```{r}
+#| title: "Models Compared"
+knitr::kable(tibble::tribble(
+  ~Model,  ~Formula,                                                     ~Purpose,
+  "Big",   "log(BMI) ~ income_ratio + age + sex + race_eth + education", "Full model - all predictors",
+  "Small", "log(BMI) ~ income_ratio",                                    "Naive baseline - key predictor only"
+))
+```
+
+```{r}
+#| title: "Test-Set Performance Summary"
+tibble(
+  Metric = c("RMSPE","MAPE (%)","Max AE","Validated R2"),
+  Big    = round(c(rmspe(test_preds$y_bt, test_preds$pred_big_bt),
+                   mape( test_preds$y_bt, test_preds$pred_big_bt),
+                   maxae(test_preds$y_bt, test_preds$pred_big_bt),
+                   vr2(  test_preds$y_bt, test_preds$pred_big_bt)), 3),
+  Small  = round(c(rmspe(test_preds$y_bt, test_preds$pred_small_bt),
+                   mape( test_preds$y_bt, test_preds$pred_small_bt),
+                   maxae(test_preds$y_bt, test_preds$pred_small_bt),
+                   vr2(  test_preds$y_bt, test_preds$pred_small_bt)), 3)
+) |> knitr::kable()
+```
+
+# Outcome & Data
+
+## Row {height="50%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "Study Details"
+knitr::kable(tibble::tribble(
+  ~Item,     ~Detail,
+  "Outcome", "BMI (kg/m2)",
+  "Key pred","Income-to-Poverty Ratio",
+  "Sample",  "7,214 adults",
+  "Split",   "75% train / 25% test",
+  "MCAR",    "3 missing education values (0.04%) imputed"
+))
+```
+
+```{r}
+#| title: "Missingness Before/After Imputation"
+tibble(Variable = names(miss_before),
+       `Before` = miss_before, `After` = miss_after) |> knitr::kable()
+```
+
+### BMI Distribution (Training Sample)
+
+```{r}
+#| title: "BMI Histogram & Q-Q Plot"
+p1 <- ggplot(training, aes(x=bmi)) +
+  geom_histogram(binwidth=1, fill="#6baed6", color="white") +
+  labs(title="BMI Histogram", x="BMI (kg/m2)", y="Count")
+p2 <- ggplot(training, aes(sample=bmi)) +
+  stat_qq(alpha=0.3) + stat_qq_line(color="red") +
+  labs(title="BMI Q-Q Plot")
+p1 + p2
+```
+
+## Row {height="50%"}
+
+```{r}
+#| title: "Summary Statistics"
+skimr::skim(study2 |> select(bmi, income_ratio, ridageyr)) |> as_tibble() |>
+  select(skim_variable, numeric.mean, numeric.sd, numeric.p0, numeric.p50, numeric.p100) |>
+  mutate(across(where(is.numeric), \(x) round(x,2))) |>
+  knitr::kable(col.names = c("Variable","Mean","SD","Min","Median","Max"))
+```
+
+# Model Fitting
+
+## Row {height="55%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "In-Sample Fit Comparison"
+bind_rows(glance(mod_big) |> mutate(Model="Big"), glance(mod_small) |> mutate(Model="Small")) |>
+  transmute(Model, R2=round(r.squared,3), Adj_R2=round(adj.r.squared,3),
+            AIC=round(AIC,1), BIC=round(BIC,1)) |>
+  knitr::kable(col.names = c("Model","R2","Adj R2","AIC","BIC"))
+```
+
+### Big Model Coefficients
+
+```{r}
+#| title: "Big Model Coefficients"
+tidy(mod_big, conf.int=TRUE, conf.level=0.90) |>
+  mutate(across(where(is.numeric), \(x) round(x,4))) |>
+  select(term, estimate, std.error, conf.low, conf.high, p.value) |>
+  knitr::kable(col.names = c("Term","Estimate","SE","90% CI Low","90% CI High","p-value"))
+```
+
+## Row {height="45%"}
+
+```{r}
+#| title: "Small Model Coefficients"
+tidy(mod_small, conf.int=TRUE, conf.level=0.90) |>
+  mutate(across(where(is.numeric), \(x) round(x,4))) |>
+  select(term, estimate, std.error, conf.low, conf.high, p.value) |>
+  knitr::kable(col.names = c("Term","Estimate","SE","90% CI Low","90% CI High","p-value"))
+```
+
+# Diagnostics
+
+## Row {height="55%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "Top 5 Influential Points (Big Model)"
+augment(mod_big) |> mutate(cooksd=cooks.distance(mod_big)) |>
+  arrange(desc(cooksd)) |> slice_head(n=5) |>
+  select(cooksd, .fitted, .resid) |>
+  mutate(across(everything(), \(x) round(x,4))) |> knitr::kable()
+```
+
+### Big Model Diagnostics
+
+```{r}
+#| title: "Big Model: Residual Plots"
+aug_big <- augment(mod_big)
+p1 <- ggplot(aug_big, aes(.fitted,.resid)) + geom_point(alpha=0.3) +
+  geom_hline(yintercept=0,linetype=2) + labs(title="Residuals vs Fitted",x="Fitted",y="Residuals")
+p2 <- ggplot(aug_big, aes(sample=.std.resid)) + stat_qq(alpha=0.3) + stat_qq_line() +
+  labs(title="Q-Q of Std Residuals")
+p3 <- ggplot(aug_big, aes(.fitted,sqrt(abs(.std.resid)))) + geom_point(alpha=0.3) +
+  labs(title="Scale-Location",x="Fitted",y="sqrt|Std Resid|")
+p1 | p2 | p3
+```
+
+## Row {height="45%"}
+
+```{r}
+#| title: "Small Model: Residual Plots"
+aug_small <- augment(mod_small)
+p4 <- ggplot(aug_small, aes(.fitted,.resid)) + geom_point(alpha=0.3) +
+  geom_hline(yintercept=0,linetype=2) + labs(title="Residuals vs Fitted",x="Fitted",y="Residuals")
+p5 <- ggplot(aug_small, aes(sample=.std.resid)) + stat_qq(alpha=0.3) + stat_qq_line() +
+  labs(title="Q-Q of Std Residuals")
+p6 <- ggplot(aug_small, aes(.fitted,sqrt(abs(.std.resid)))) + geom_point(alpha=0.3) +
+  labs(title="Scale-Location",x="Fitted",y="sqrt|Std Resid|")
+p4 | p5 | p6
+```
+
+# Validation
+
+## Row {height="55%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "Test-Set Metrics (BMI scale)"
+tibble(
+  Metric = c("RMSPE","MAPE (%)","Max AE","Validated R2"),
+  Big    = round(c(rmspe(test_preds$y_bt,test_preds$pred_big_bt),
+                   mape( test_preds$y_bt,test_preds$pred_big_bt),
+                   maxae(test_preds$y_bt,test_preds$pred_big_bt),
+                   vr2(  test_preds$y_bt,test_preds$pred_big_bt)),3),
+  Small  = round(c(rmspe(test_preds$y_bt,test_preds$pred_small_bt),
+                   mape( test_preds$y_bt,test_preds$pred_small_bt),
+                   maxae(test_preds$y_bt,test_preds$pred_small_bt),
+                   vr2(  test_preds$y_bt,test_preds$pred_small_bt)),3)
+) |> knitr::kable()
+```
+
+### Observed vs Predicted (Test Set)
+
+```{r}
+#| title: "Observed vs Predicted BMI"
+p_big <- ggplot(test_preds, aes(x=pred_big_bt,y=y_bt)) + geom_point(alpha=0.3) +
+  geom_abline(slope=1,intercept=0,linetype=2,color="red") +
+  labs(title="Big Model",x="Predicted BMI",y="Observed BMI")
+p_small <- ggplot(test_preds, aes(x=pred_small_bt,y=y_bt)) + geom_point(alpha=0.3) +
+  geom_abline(slope=1,intercept=0,linetype=2,color="red") +
+  labs(title="Small Model",x="Predicted BMI",y="Observed BMI")
+p_big | p_small
+```
+
+## Row {height="45%"}
+
+```{r}
+#| title: "Posterior Predictive Check"
+ppc_df <- function(mod, label) {
+  tibble(y_obs=training$y, y_hat=fitted(mod),
+    y_rep=rnorm(length(fitted(mod)), mean=fitted(mod), sd=sigma(mod)), model=label)
+}
+ppc_all <- bind_rows(ppc_df(mod_big,"Big"), ppc_df(mod_small,"Small"))
+ggplot(ppc_all, aes(x=y_rep, fill=model)) +
+  geom_density(alpha=0.4) +
+  geom_density(aes(x=y_obs), color="black", linewidth=0.8, inherit.aes=FALSE) +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Simulated vs Observed", x=outcome_label, fill="Model")
+```

@@ -1,0 +1,28 @@
+---
+about:
+  template: solana
+  id: about-block
+  image: "img/IMG_4131.jpg"
+  links:
+      - icon: linkedin
+        href: https://www.linkedin.com/in/mali-ya-mungu-ocoko-4279aa208/
+      - icon: envelope
+        aria-label: email
+        href: "mailto:mail.mlo38@case.edu"     
+---
+
+::: {#about-block}
+:::
+
+# Welcome to my website!
+
+I am Mali Ocoko, a Ph.D. student in Biomedical Engineering at Case Western Reserve University, working in the Capadona and Hess-Dunning Lab. My research focuses on developing material- and pharmacological-based strategies to mitigate the neuroinflammatory response that arises following intracortical microelectrode implantation.
+
+Through this work, I aim to advance the long-term performance and biocompatibility of neural interfaces by integrating insights from materials science, neurobiology, and drug delivery. My broader interests include translational neuroengineering, biomaterials design, and understanding how tissue–device interactions influence chronic implant outcomes.
+
+```{=html}
+<div  style="margin: 30px; text-align: center;">
+<a class="btn btn-primary" href="https://www.marvinschmitt.com/blog/website-tutorial-quarto/" role="button" target="_blank" style="padding: 15px 30px;">View the tutorial for this template (+ download link)</a>
+</div>
+```
+

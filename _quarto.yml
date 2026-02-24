@@ -1,0 +1,73 @@
+# This file controls the settings for your Quarto template from www.marvinschmitt.com
+
+# website settings
+website:
+  title: "Mali Ya Mungu Ocoko"                                # Your name
+  description: "Biomedical Engineering Ph.D Candidate at Case Western Reserve University"   # A brief slogan (optional)
+  image: "IMG_4131.jpg"
+  favicon: "img/brain.png"
+  
+  # start of the navigation bar at the top of the website
+  navbar:
+    pinned: true
+    logo: "img/brain.png"
+    
+    # your sub-pages
+    left:
+      - text: "CV"
+        href: cv/index.qmd
+      - text: "Projects"
+        href: projects/index.qmd
+      - text: "Blog"
+        href: blog/index.qmd
+      - text: "Study 1"
+        href: study1/index.qmd
+      - text: "Study 2"
+        href: study2/index.qmd
+    # your social media handles
+    right:
+      - icon: linkedin
+        href: https://www.linkedin.com/in/mali-ya-mungu-ocoko-4279aa208/
+      - icon: envelope
+        aria-label: email
+        href: "mailto:mail.mlo38@case.edu"  
+  
+  
+
+# Don't touch unless you know what you are doing :) ------------
+  search: 
+    location: navbar
+    type: textbox
+  page-footer: 
+    left: |
+      <span class="faux-block">&#169; 2023 Marvin Schmitt CC BY-SA 4.0</span>
+    center: |
+      <span class="faux-block"><a href="https://www.marvinschmitt.com/blog/website-tutorial-quarto/">View the tutorial for this template!</a></span>
+    right: |
+      <span class="faux-block"><a href="https://github.com/marvinschmitt/quarto-website-template/">View source on GitHub</a></span>
+
+project:
+  type: website
+  output-dir: docs
+
+  preview: 
+    port: 22222
+    browser: true
+    watch-inputs: true
+    navigate: true
+
+execute:
+  freeze: true
+
+format:
+  html:
+    fontsize: 1.1em
+    theme: 
+      - pulse
+      - html/styles.scss
+    toc: false
+    code-link: true
+    anchor-sections: true
+    fig-cap-location: margin
+    reference-location: margin
+    footnotes-hover: true

@@ -1,0 +1,336 @@
+---
+title: "Study 1: BMI, Income, and Health Markers in NHANES 2017-2020"
+author: "Mali Ocoko"
+format: dashboard
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(janitor)
+library(nhanesA)
+library(tidyverse)
+
+knitr::opts_chunk$set(comment = NA)
+theme_set(theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"), panel.grid.minor = element_blank()))
+
+demo  <- nhanes("P_DEMO") |> clean_names()
+bmx   <- nhanes("P_BMX")  |> clean_names()
+smq   <- nhanes("P_SMQ")  |> clean_names()
+bpq   <- nhanes("P_BPQ")  |> clean_names()
+
+nh_all <- demo |>
+  left_join(bmx, by = "seqn") |>
+  left_join(smq, by = "seqn") |>
+  left_join(bpq, by = "seqn") |>
+  mutate(across(c(riagendr, ridreth3, dmdeduc2, indfmpir, bmxbmi, smq020, bpq020), as.numeric))
+
+nh <- nh_all |>
+  transmute(
+    seqn, ridageyr,
+    sex = factor(riagendr, levels = c(1,2), labels = c("Male","Female")),
+    race_eth = factor(ridreth3, levels = c(1,2,3,4,6,7),
+      labels = c("Mexican","Other Hispanic","White","Black","Asian","Multi-Racial")),
+    education = case_when(
+      dmdeduc2 %in% c(1,2) ~ "Less than HS", dmdeduc2 == 3 ~ "HS Grad",
+      dmdeduc2 == 4 ~ "Some College",         dmdeduc2 == 5 ~ "College Grad",
+      TRUE ~ NA_character_),
+    income_ratio = if_else(indfmpir < 0 | indfmpir > 5, NA_real_, indfmpir),
+    bmi        = if_else(bmxbmi < 10 | bmxbmi > 80, NA_real_, bmxbmi),
+    smoked_100 = case_when(smq020==1~"Yes", smq020==2~"No", TRUE~NA_character_) |> factor(levels=c("No","Yes")),
+    hbp_dx     = case_when(bpq020==1~"Yes", bpq020==2~"No", TRUE~NA_character_) |> factor(levels=c("No","Yes"))
+  ) |> droplevels()
+
+s1_B <- nh |> filter(!is.na(bmi), !is.na(sex))            |> droplevels()
+s1_C <- nh |> filter(!is.na(bmi), !is.na(education))      |> droplevels()
+s1_D <- nh |> filter(!is.na(sex), !is.na(hbp_dx))         |> droplevels()
+s1_E <- nh |> filter(!is.na(race_eth), !is.na(education)) |> droplevels()
+
+# Pre-compute t-test and chi-square so they're available everywhere
+set.seed(431)
+tt_b  <- t.test(bmi ~ sex, data = s1_B, conf.level = 0.90)
+fit_c <- aov(bmi ~ education, data = s1_C)
+tab_e <- table(s1_E$race_eth, s1_E$education)
+chi_e <- chisq.test(tab_e)
+
+s1_D2 <- nh |>
+  filter(!is.na(sex), !is.na(hbp_dx)) |>
+  mutate(sex = factor(sex, levels=c("Male","Female")), hbp_dx = factor(hbp_dx, levels=c("No","Yes"))) |>
+  droplevels()
+tab_d <- table(s1_D2$sex, s1_D2$hbp_dx)
+a <- as.numeric(tab_d["Female","Yes"]); b <- as.numeric(tab_d["Female","No"])
+cc <- as.numeric(tab_d["Male","Yes"]);  dd <- as.numeric(tab_d["Male","No"])
+p_f <- a/(a+b); p_m <- cc/(cc+dd); z <- qnorm(0.95)
+RD <- p_f-p_m; RR <- p_f/p_m; OR <- (a/b)/(cc/dd)
+RD_CI <- c(RD - z*sqrt(p_f*(1-p_f)/(a+b)+p_m*(1-p_m)/(cc+dd)),
+           RD + z*sqrt(p_f*(1-p_f)/(a+b)+p_m*(1-p_m)/(cc+dd)))
+RR_CI <- exp(log(RR) + c(-1,1)*z*sqrt((1/a)-(1/(a+b))+(1/cc)-(1/(cc+dd))))
+OR_CI <- exp(log(OR) + c(-1,1)*z*sqrt(1/a+1/b+1/cc+1/dd))
+```
+
+# Overview
+
+## Row {height="40%"}
+
+```{r}
+#| title: "About This Dashboard"
+#| padding: 10px
+knitr::kable(tibble::tribble(
+  ~Item,         ~Detail,
+  "Data source", "NHANES 2017-March 2020 (Pre-pandemic)",
+  "Tables used", "P_DEMO, P_BMX, P_SMQ, P_BPQ",
+  "Sample size", "~15,560 participants",
+  "Rendered",    format(Sys.Date(), "%Y-%m-%d")
+))
+```
+
+```{r}
+#| title: "Research Questions & Hypotheses"
+knitr::kable(tibble::tribble(
+  ~Analysis, ~Question,                                          ~Method,                       ~Hypothesis,
+  "B", "Is mean BMI different between males and females?",       "Welch t-test (90% CI)",       "Small difference expected",
+  "C", "Does mean BMI differ across education levels?",          "ANOVA + Tukey HSD (90% CI)",  "Higher education = lower BMI",
+  "D", "Is high blood pressure more common in one sex?",         "2x2: RD, RR, OR (90% CI)",    "Minimal difference expected",
+  "E", "Is education associated with race/ethnicity?",           "Pearson chi-square",          "Strong association expected"
+))
+```
+
+## Row {height="60%"}
+
+```{r}
+#| title: "Key Findings Summary"
+knitr::kable(tibble::tribble(
+  ~Analysis,              ~`Key Conclusion`,
+  "B - BMI by Sex",       "Females average ~1 BMI unit higher than males; 90% CI excludes 0",
+  "C - BMI by Education", "Higher education linked to lower BMI; college grads consistently leanest",
+  "D - HBP by Sex",       "No meaningful difference in HBP prevalence between males and females",
+  "E - Educ by Race",     "Strong association (p < 2e-16); distributions vary substantially by group"
+))
+```
+
+# Analysis B
+
+## Row {height="60%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "BMI by Sex"
+knitr::kable(tibble::tribble(
+  ~Item,        ~Detail,
+  "Method",     "Welch two-sample t-test",
+  "CI level",   "90%",
+  "Question",   "Is mean BMI different between males and females?",
+  "Hypothesis", "Small difference; males slightly higher BMI"
+))
+```
+
+```{r}
+#| title: "Sample Sizes"
+s1_B |> count(sex) |> knitr::kable(col.names = c("Sex", "n"))
+```
+
+### BMI Distribution by Sex
+
+```{r}
+#| title: "BMI Distribution by Sex"
+ggplot(s1_B, aes(sex, bmi, fill = sex)) +
+  geom_violin(trim = TRUE, alpha = 0.3, show.legend = FALSE) +
+  geom_boxplot(width = 0.18, outlier.alpha = 0.2, show.legend = FALSE) +
+  labs(x = "Sex", y = "BMI (kg/m2)") +
+  scale_fill_brewer(palette = "Set2")
+```
+
+## Row {height="40%"}
+
+```{r}
+#| title: "Group Means"
+tibble(Group = c("Male","Female"), `Mean BMI` = round(tt_b$estimate, 2)) |> knitr::kable()
+```
+
+```{r}
+#| title: "Welch t-test Result (90% CI)"
+tibble(
+  Statistic = c("Mean diff (F-M)","90% CI Lower","90% CI Upper","t-statistic","p-value"),
+  Value = c(round(diff(tt_b$estimate),3), round(tt_b$conf.int[1],3),
+            round(tt_b$conf.int[2],3), round(tt_b$statistic,3),
+            format.pval(tt_b$p.value, digits=3))
+) |> knitr::kable()
+```
+
+```{r}
+#| title: "Conclusion"
+knitr::kable(tibble::tibble(
+  Conclusion = "Females have a modestly higher mean BMI (~1 unit) than males. The 90% CI supports a real but small difference, consistent across this large NHANES sample."
+))
+```
+
+# Analysis C
+
+## Row {height="60%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "BMI by Education"
+knitr::kable(tibble::tribble(
+  ~Item,        ~Detail,
+  "Method",     "One-way ANOVA + Tukey HSD",
+  "CI level",   "90%",
+  "Question",   "Does mean BMI differ across education levels?",
+  "Hypothesis", "Higher education linked to lower BMI"
+))
+```
+
+```{r}
+#| title: "Sample Sizes"
+s1_C |> count(education) |> arrange(desc(n)) |> knitr::kable(col.names = c("Education","n"))
+```
+
+### BMI by Education Level
+
+```{r}
+#| title: "BMI by Education Level"
+s1_C |>
+  mutate(education = factor(education, levels = c("Less than HS","HS Grad","Some College","College Grad"))) |>
+  ggplot(aes(education, bmi, fill = education)) +
+  geom_boxplot(show.legend = FALSE, outlier.alpha = 0.15) +
+  coord_flip() +
+  labs(x = "Education Level", y = "BMI (kg/m2)") +
+  scale_fill_brewer(palette = "Set2")
+```
+
+## Row {height="40%"}
+
+```{r}
+#| title: "ANOVA Summary"
+summary(fit_c)[[1]] |> as.data.frame() |>
+  tibble::rownames_to_column("Term") |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable()
+```
+
+```{r}
+#| title: "Tukey HSD Pairwise (90% CI)"
+TukeyHSD(fit_c, conf.level = 0.90)$education |> as.data.frame() |>
+  tibble::rownames_to_column("Comparison") |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable()
+```
+
+# Analysis D
+
+## Row {height="60%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "HBP by Sex"
+knitr::kable(tibble::tribble(
+  ~Item,        ~Detail,
+  "Method",     "2x2 table: RD, RR, OR",
+  "CI level",   "90%",
+  "Question",   "Is HBP diagnosis more common in one sex?",
+  "Hypothesis", "Minimal or no difference between sexes"
+))
+```
+
+```{r}
+#| title: "Cell Counts"
+table(s1_D2$sex, s1_D2$hbp_dx) |> as.data.frame() |>
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) |>
+  rename(Sex = Var1) |> knitr::kable()
+```
+
+### HBP Prevalence by Sex
+
+```{r}
+#| title: "HBP Prevalence by Sex"
+s1_D2 |>
+  count(sex, hbp_dx) |> group_by(sex) |> mutate(p = n/sum(n)) |>
+  filter(hbp_dx == "Yes") |>
+  ggplot(aes(x = sex, y = p, fill = sex)) +
+  geom_col(show.legend = FALSE, width = 0.5) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.5)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "Sex", y = "% with HBP diagnosis")
+```
+
+## Row {height="40%"}
+
+```{r}
+#| title: "Risk Measures (90% CI)"
+tibble(
+  Measure  = c("Risk Difference (F-M)","Risk Ratio (F/M)","Odds Ratio (F vs M)"),
+  Estimate = round(c(RD, RR, OR), 4),
+  `90% CI` = c(paste0("(",round(RD_CI[1],4),", ",round(RD_CI[2],4),")"),
+               paste0("(",round(RR_CI[1],4),", ",round(RR_CI[2],4),")"),
+               paste0("(",round(OR_CI[1],4),", ",round(OR_CI[2],4),")"))
+) |> knitr::kable()
+```
+
+```{r}
+#| title: "Conclusion"
+knitr::kable(tibble::tibble(
+  Conclusion = "All three measures are near their null values with 90% CIs straddling the null. No meaningful sex difference in HBP prevalence was found."
+))
+```
+
+# Analysis E
+
+## Row {height="60%"}
+
+### {.sidebar}
+
+```{r}
+#| title: "Education by Race/Ethnicity"
+knitr::kable(tibble::tribble(
+  ~Item,        ~Detail,
+  "Method",     "Pearson chi-square test",
+  "Table dims", "6 race groups x 4 education levels",
+  "Question",   "Is education associated with race/ethnicity?",
+  "Hypothesis", "Strong association expected"
+))
+```
+
+```{r}
+#| title: "Table Dimensions"
+tibble(Statistic = c("Min cell count","Total n"),
+       Value = c(min(tab_e), sum(tab_e))) |> knitr::kable()
+```
+
+### Education Distribution by Race/Ethnicity
+
+```{r}
+#| title: "Education Distribution by Race/Ethnicity"
+s1_E |>
+  mutate(education = factor(education, levels = c("Less than HS","HS Grad","Some College","College Grad"))) |>
+  count(race_eth, education) |> group_by(race_eth) |> mutate(p = n/sum(n)) |>
+  ggplot(aes(x = race_eth, y = p, fill = education)) +
+  geom_col() + coord_flip() +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "Race/Ethnicity", y = "Percent", fill = "Education")
+```
+
+## Row {height="40%"}
+
+```{r}
+#| title: "Chi-Square Test Result"
+tibble(
+  Statistic = c("Chi-square (X2)","Degrees of freedom","p-value"),
+  Value = c(round(chi_e$statistic,2), chi_e$parameter, format.pval(chi_e$p.value, digits=3))
+) |> knitr::kable()
+```
+
+```{r}
+#| title: "Conclusion"
+knitr::kable(tibble::tibble(
+  Conclusion = "Race/ethnicity and education are strongly associated (p < 2e-16). Education distributions differ substantially across racial/ethnic groups, tracking with national patterns."
+))
+```
